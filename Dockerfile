@@ -25,7 +25,7 @@ COPY --from=build /app/target/*.jar app.jar
 COPY items.db /app/items.db
 
 # Spring Boot по умолчанию использует порт 8080, а у меня 8181 прописано
-EXPOSE 8181
+EXPOSE 8080
 
 # Запускаем приложение
 ENTRYPOINT ["java", "-Djava.security.egd=file:/dev/./urandom", "-jar", "app.jar"]
