@@ -39,19 +39,31 @@ public class WebhookController
     {
 
         String command = request.path("request").path("command").asText().toLowerCase().trim();
-        String responseText = processCommand(command);
+        // Проверяем, не хочет ли пользователь выйти
+        boolean endSession = command.matches(".*(выйти|выход|хватит|отстань|закончить|стоп|до свидания).*");
+
+        String responseText;
+        if (endSession)
+        {
+            responseText = "Пока! Возвращайся, когда что-то понадобится.";
+        }
+        else
+        {
+            responseText = processCommand(command);
+        }
 
         String responseJson = """
-                {
-                  "response": {
-                    "text": "%s",
-                    "end_session": false
-                  },
-                  "version": "1.0",
-                  "session": %s
-                }
-                """.formatted(
+            {
+              "response": {
+                "text": "%s",
+                "end_session": %s
+              },
+              "version": "1.0",
+              "session": %s
+            }
+            """.formatted(
                 responseText.replace("\"", "\\\""),
+                endSession,
                 request.path("session").toString()
         );
 
