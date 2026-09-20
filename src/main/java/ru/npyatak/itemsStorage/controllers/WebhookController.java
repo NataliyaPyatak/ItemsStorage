@@ -39,48 +39,107 @@ public class WebhookController
     {
 
         String command = request.path("request").path("command").asText().toLowerCase().trim();
+        String userId = request.path("session").path("user").path("user_id").asText();
+        boolean isNewSession = request.path("session").path("new").asBoolean(false);
+        // Текущее хранилище из state (если уже выбрано)
+        String currentStorage = request.path("state").path("storage").asText("");
+
         // Проверяем, не хочет ли пользователь выйти
-        boolean endSession = command.matches(".*(выйти|выход|хватит|отстань|закончить|стоп|до свидания).*");
+        boolean endSession = command.matches(".*(выйти|выход|пока|хватит|отстань|закончить|стоп|до свидания).*");
 
         String responseText;
-        if (endSession)
+        String newStorage = currentStorage;  // сохраняем текущее, если не меняем
+        if (userId == null || userId.isBlank())
         {
-            responseText = "Пока! Возвращайся, когда что-то понадобится.";
-        }
-        else
-        {
-            responseText = processCommand(command);
-        }
-
-        String responseJson = """
+            String json = """
             {
               "response": {
-                "text": "%s",
-                "end_session": %s
+                "text": "Чтобы пользоваться навыком, войдите в аккаунт Яндекса.",
+                "end_session": true
               },
               "version": "1.0",
               "session": %s
             }
-            """.formatted(
+            """.formatted(request.path("session").toString());
+            return mapper.readTree(json);
+        }
+
+        if (endSession)
+        {
+            responseText = "Пока! Возвращайся, когда что-то понадобится.";
+        }
+        else if (isNewSession || currentStorage.isBlank())
+        {
+            // Старт: спрашиваем хранилище
+            if (command.isBlank() || isNewSession)
+            {
+                // Показываем известные хранилища, если есть
+                List<String> listStorages = repo.findDistinctStoragesByUserId(userId);
+                if (listStorages.isEmpty())
+                {
+                    responseText = "Привет! Назови хранилище, например: квартира, дача, гараж.";
+                }
+                else
+                {
+                    responseText = "Привет! Какое хранилище? Известные: "
+                            + String.join(", ", listStorages)
+                            + ". Или назови новое.";
+                }
+            }
+            else
+            {
+                // Пользователь назвал хранилище
+                newStorage = command;
+                responseText = "Окей, хранилище: " + command
+                        + ". Теперь спрашивай, где что лежит.";
+            }
+        }
+        else if (command.matches("переключи .+|смени хранилище .+"))
+        {
+            // Команда переключения хранилища
+            newStorage = command
+                    .replaceFirst("(переключи\\s+(?:на\\s+)?|смени\\s+хранилище\\s+(?:на\\s+)?)", "")
+                    .trim();
+            responseText = "Переключила на " + newStorage + ".";
+        }
+        else
+        {
+            responseText = processCommand(command, userId, newStorage);
+        }
+
+        String responseJson = """
+        {
+          "response": {
+            "text": "%s",
+            "end_session": %s
+          },
+          "version": "1.0",
+          "session": %s,
+          "state": {
+            "storage": "%s"
+          }
+        }
+        """.formatted(
                 responseText.replace("\"", "\\\""),
                 endSession,
-                request.path("session").toString()
+                request.path("session").toString(),
+                newStorage.replace("\"", "\\\"")
         );
 
         return mapper.readTree(responseJson);
     }
 
-    private String processCommand(String command)
+    private String processCommand(String command, String userId, String storage)
     {
 
         // --- "где шуруповёрт" ---
         if (command.startsWith("где "))
         {
             String thing = command.substring(4).trim();
-            List<Item> found = repo.findByNameIgnoreCaseContaining(thing);
+            List<Item> found = repo.findByNameIgnoreCaseContainingAndUserIdAndStorage(thing, userId, storage);
             if (found.isEmpty())
             {
-                return "Не нашла " + thing + " в базе. Может, под другим названием?";
+                return "Не нашла " + thing + " в " + storage + ". Может, под другим названием?";
             }
             StringBuilder sb = new StringBuilder();
             for (Item item : found)
@@ -109,7 +168,7 @@ public class WebhookController
             String thing = m.group(1).trim();
             String place = m.group(2).trim();
 
-            Item existing = repo.findByNameIgnoreCase(thing);
+            Item existing = repo.findByNameIgnoreCaseAndUserIdAndStorage(thing, userId, storage);
             if (existing != null)
             {
                 existing.setLocation(place);
@@ -118,7 +177,7 @@ public class WebhookController
             }
             else
             {
-                repo.save(new Item(thing, place, ""));
+                repo.save(new Item(thing, place, "", userId, storage));
                 return "Добавила: " + thing + " в " + place + ".";
             }
         }
@@ -127,7 +186,7 @@ public class WebhookController
         if (command.startsWith("что в "))
         {
             String place = command.substring(6).trim();
-            List<Item> items = repo.findByLocationIgnoreCaseContaining(place);
+            List<Item> items = repo.findByLocationIgnoreCaseContainingAndUserIdAndStorage(place, userId, storage);
             if (items.isEmpty())
             {
                 return "В " + place + " ничего не записано.";
@@ -149,7 +208,7 @@ public class WebhookController
             }
             String thing = m.group(1).trim();
             String place = m.group(2).trim();
-            repo.save(new Item(thing, place, ""));
+            repo.save(new Item(thing, place, "", userId, storage));
             return "Добавила: " + thing + " в " + place + ".";
         }
 
@@ -157,7 +216,7 @@ public class WebhookController
         if (command.startsWith("удали "))
         {
             String thing = command.substring(6).trim();
-            Item existing = repo.findByNameIgnoreCase(thing);
+            Item existing = repo.findByNameIgnoreCaseAndUserIdAndStorage(thing, userId, storage);
             if (existing != null)
             {
                 repo.delete(existing);
@@ -166,24 +225,30 @@ public class WebhookController
             return "Не нашла " + thing + ".";
         }
 
-        // --- Справка ---
+        // справка
         return "Я умею: «где шуруповёрт», «что в ящике 1», "
                 + "«положил шуруповёрт в ящик 3», «добавь молоток в ящик 2», "
-                + "«удали изоленту».";
+                + "«удали изоленту», «переключи на дачу», «выход».";
     }
 
     @GetMapping("/debug")
-    public String debug() {
+    public String debug()
+    {
         var all = repo.findAll();
-        if (all.isEmpty()) {
+        if (all.isEmpty())
+        {
             return "Таблица items пуста";
         }
         StringBuilder sb = new StringBuilder("Все вещи:\n");
-        for (Item i : all) {
+        for (Item i : all)
+        {
             sb.append("ID=").append(i.getId())
                     .append(", name='").append(i.getName())
                     .append("', location='").append(i.getLocation())
-                    .append("', note='").append(i.getNote()).append("'\n");
+                    .append("', note='").append(i.getNote())
+                    .append("', userId='").append(i.getUserId())
+                    .append("', storage='").append(i.getStorage())
+                    .append("'\n");
         }
         return sb.toString();
     }

@@ -3,6 +3,8 @@ package ru.npyatak.itemsStorage.repositories;
 import java.util.List;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import ru.npyatak.itemsStorage.entities.Item;
 
@@ -15,12 +17,17 @@ import ru.npyatak.itemsStorage.entities.Item;
 public interface ItemRepository extends JpaRepository<Item, Long>
 {
 
-    // Поиск по точному или частичному совпадению названия (без учёта регистра)
-    List<Item> findByNameIgnoreCaseContaining(String name);
+    List<Item> findByNameIgnoreCaseContainingAndUserIdAndStorage(
+            String name, String userId, String storage);
 
-    // Поиск по точному совпадению названия
-    Item findByNameIgnoreCase(String name);
+    Item findByNameIgnoreCaseAndUserIdAndStorage(
+            String name, String userId, String storage);
 
-    // Что лежит в конкретном месте
-    List<Item> findByLocationIgnoreCaseContaining(String location);
+    List<Item> findByLocationIgnoreCaseContainingAndUserIdAndStorage(
+            String location, String userId, String storage);
+
+    List<Item> findByUserIdAndStorage(String userId, String storage);
+
+    @Query("SELECT DISTINCT i.storage FROM Item i WHERE i.userId = :userId")
+    List<String> findDistinctStoragesByUserId(@Param("userId") String userId);
 }
