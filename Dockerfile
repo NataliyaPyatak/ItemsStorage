@@ -22,7 +22,6 @@ USER spring:spring
 
 # Копируем собранный JAR из первого этапа
 COPY --from=build /app/target/*.jar app.jar
-COPY items.db /app/items.db
 
 # Spring Boot по умолчанию использует порт 8080, а у меня 8181 прописано
 EXPOSE 8080
