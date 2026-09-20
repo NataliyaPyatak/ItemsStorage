@@ -5,6 +5,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -27,6 +28,8 @@ public class WebhookController
 
     private final ItemRepository repo;
     private final ObjectMapper mapper;
+    @Value("${skill.id}")
+    private String expectedSkillId;
 
     public WebhookController(ItemRepository repo, ObjectMapper mapper)
     {
@@ -37,7 +40,17 @@ public class WebhookController
     @PostMapping("/")
     public JsonNode webhook(@RequestBody JsonNode request) throws Exception
     {
-
+        String skillId = request.path("session").path("skill_id").asText();
+        if(!skillId.equals(expectedSkillId))
+        {
+            // Чужой запрос — молча игнорируем
+            return mapper.readTree("""
+            {
+              "response": { "text": "", "end_session": true },
+              "version": "1.0"
+            }
+        """);
+        }
         String command = request.path("request").path("command").asText().toLowerCase().trim();
         String userId = request.path("session").path("user").path("user_id").asText();
         boolean isNewSession = request.path("session").path("new").asBoolean(false);
