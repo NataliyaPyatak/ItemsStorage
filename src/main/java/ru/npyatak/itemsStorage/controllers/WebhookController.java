@@ -42,7 +42,7 @@ public class WebhookController
         String userId = request.path("session").path("user").path("user_id").asText();
         boolean isNewSession = request.path("session").path("new").asBoolean(false);
         // Текущее хранилище из state (если уже выбрано)
-        String currentStorage = request.path("state").path("storage").asText("");
+        String currentStorage = request.path("state").path("session").path("storage").asText("");
 
         // Проверяем, не хочет ли пользователь выйти
         boolean endSession = command.matches(".*(выйти|выход|пока|хватит|отстань|закончить|стоп|до свидания).*");
@@ -115,7 +115,7 @@ public class WebhookController
           },
           "version": "1.0",
           "session": %s,
-          "state": {
+          "session_state": {
             "storage": "%s"
           }
         }
