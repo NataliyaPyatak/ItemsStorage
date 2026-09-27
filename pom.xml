@@ -57,6 +57,14 @@
 				<groupId>org.springframework.boot</groupId>
 				<artifactId>spring-boot-maven-plugin</artifactId>
 			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-surefire-plugin</artifactId>
+				<configuration>
+					<!-- Mockito (byte-buddy) не может сам подключиться к VM на JDK 17+ без этих флагов -->
+					<argLine>-Djdk.attach.allowAttachSelf=true -XX:+EnableDynamicAgentLoading</argLine>
+				</configuration>
+			</plugin>
 		</plugins>
 	</build>
 

@@ -1,16 +1,18 @@
 package ru.npyatak.itemsStorage.controllers;
 
 import java.util.List;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
 import ru.npyatak.itemsStorage.entities.Item;
+import ru.npyatak.itemsStorage.parser.IntentParser;
+import ru.npyatak.itemsStorage.parser.ParsedCommand;
 import ru.npyatak.itemsStorage.repositories.ItemRepository;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -26,15 +28,24 @@ import tools.jackson.databind.node.ObjectNode;
 public class WebhookController
 {
 
+    private static final Logger log = LoggerFactory.getLogger(WebhookController.class);
+
+    /** Справка для нераспознанных фраз */
+    private static final String HELP = "Я умею: «где шуруповёрт», «что в ящике 3», "
+            + "«положила дрель в ящик 1», «запиши, что дрель теперь в ящике 1», "
+            + "«добавь молоток в ящик 2», «удали изоленту», «переключи на дачу», «выход».";
+
     private final ItemRepository repo;
     private final ObjectMapper mapper;
+    private final IntentParser parser;
     @Value("${skill.id}")
     private String expectedSkillId;
 
-    public WebhookController(ItemRepository repo, ObjectMapper mapper)
+    public WebhookController(ItemRepository repo, ObjectMapper mapper, IntentParser parser)
     {
         this.repo = repo;
         this.mapper = mapper;
+        this.parser = parser;
     }
 
     @PostMapping("/")
@@ -152,103 +163,111 @@ public class WebhookController
 
     private String processCommand(String command, String userId, String storage)
     {
-
-        // --- "где шуруповёрт" ---
-        if (command.startsWith("где "))
+        ParsedCommand parsed = parser.parse(command);
+        log.info("фраза: «{}» → intent: {}, item: «{}», place: «{}» (storage: «{}», user: {})",
+                command, parsed.intent(), parsed.item(), parsed.place(), storage, userId);
+        return switch (parsed.intent())
         {
-            String thing = command.substring(4).trim();
-            List<Item> found = repo.findByNameIgnoreCaseContainingAndUserIdAndStorage(thing, userId, storage);
-            if (found.isEmpty())
-            {
-                return "Не нашла " + thing + " в " + storage + ". Может, под другим названием?";
-            }
-            StringBuilder sb = new StringBuilder();
-            for (Item item : found)
-            {
-                sb.append(item.getName())
-                        .append(" — ")
-                        .append(item.getLocation());
-                if (item.getNote() != null && !item.getNote().isBlank())
-                {
-                    sb.append(" (").append(item.getNote()).append(")");
-                }
-                sb.append(". ");
-            }
-            return sb.toString().trim();
-        }
+            case PUT -> put(parsed, userId, storage);
+            case ADD -> add(parsed, userId, storage);
+            case FIND -> find(parsed, userId, storage);
+            case WHAT_IN -> whatIn(parsed, userId, storage);
+            case DELETE -> delete(parsed, userId, storage);
+            case UNKNOWN -> HELP;
+        };
+    }
 
-        // --- "положил шуруповёрт в ящик 3" ---
-        if (command.startsWith("положил ") || command.startsWith("переложил "))
+    /** Где вещь: сравниваем основы слов, падеж не важен */
+    private String find(ParsedCommand parsed, String userId, String storage)
+    {
+        List<Item> found = repo.findByUserIdAndStorage(userId, storage).stream()
+                .filter(item -> parser.matchesByStem(parsed.item(), item.getName()))
+                .toList();
+        if (found.isEmpty())
         {
-            Pattern p = Pattern.compile("(?:положил|переложил)\\s+(.+?)\\s+в\\s+(.+)");
-            Matcher m = p.matcher(command);
-            if (!m.matches())
-            {
-                return "Не поняла формат. Скажи: «положил шуруповёрт в ящик 3».";
-            }
-            String thing = m.group(1).trim();
-            String place = m.group(2).trim();
-
-            Item existing = repo.findByNameIgnoreCaseAndUserIdAndStorage(thing, userId, storage);
-            if (existing != null)
-            {
-                existing.setLocation(place);
-                repo.save(existing);
-                return "Записала: " + existing.getName() + " теперь в " + place + ".";
-            }
-            else
-            {
-                repo.save(new Item(thing, place, "", userId, storage));
-                return "Добавила: " + thing + " в " + place + ".";
-            }
+            return "Не нашла " + parsed.item() + " в " + storage + ". Может, под другим названием?";
         }
-
-        // --- "что в ящике 1" ---
-        if (command.startsWith("что в "))
+        StringBuilder sb = new StringBuilder();
+        for (Item item : found)
         {
-            String place = command.substring(6).trim();
-            List<Item> items = repo.findByLocationIgnoreCaseContainingAndUserIdAndStorage(place, userId, storage);
-            if (items.isEmpty())
+            sb.append(item.getName())
+                    .append(" — ")
+                    .append(item.getLocation());
+            if (item.getNote() != null && !item.getNote().isBlank())
             {
-                return "В " + place + " ничего не записано.";
+                sb.append(" (").append(item.getNote()).append(")");
             }
-            String names = items.stream()
-                    .map(Item::getName)
-                    .collect(Collectors.joining(", "));
-            return "В " + place + ": " + names + ".";
+            sb.append(". ");
         }
+        return sb.toString().trim();
+    }
 
-        // --- "добавь молоток в ящик 2" ---
-        if (command.startsWith("добавь "))
+    /** Что лежит в месте: сравниваем места по основам */
+    private String whatIn(ParsedCommand parsed, String userId, String storage)
+    {
+        String place = parsed.place();
+        String names = repo.findByUserIdAndStorage(userId, storage).stream()
+                .filter(item -> parser.matchesByStem(place, item.getLocation()))
+                .map(Item::getName)
+                .collect(Collectors.joining(", "));
+        if (names.isEmpty())
         {
-            Pattern p = Pattern.compile("добавь\\s+(.+?)\\s+в\\s+(.+)");
-            Matcher m = p.matcher(command);
-            if (!m.matches())
-            {
-                return "Не поняла. Скажи: «добавь молоток в ящик 2».";
-            }
-            String thing = m.group(1).trim();
-            String place = m.group(2).trim();
-            repo.save(new Item(thing, place, "", userId, storage));
-            return "Добавила: " + thing + " в " + place + ".";
+            return "В " + place + " ничего не записано.";
         }
+        return "В " + place + ": " + names + ".";
+    }
 
-        // --- "удали изоленту" ---
-        if (command.startsWith("удали "))
+    /** Положил/переложил/запиши: обновляем место существующей вещи, иначе создаём */
+    private String put(ParsedCommand parsed, String userId, String storage)
+    {
+        if (parsed.place().isBlank())
         {
-            String thing = command.substring(6).trim();
-            Item existing = repo.findByNameIgnoreCaseAndUserIdAndStorage(thing, userId, storage);
-            if (existing != null)
-            {
-                repo.delete(existing);
-                return "Удалила " + thing + " из базы.";
-            }
-            return "Не нашла " + thing + ".";
+            return "Не поняла, куда положить. Скажи: «положила дрель в ящик 1».";
         }
+        Item existing = findByName(parsed.item(), userId, storage);
+        if (existing != null)
+        {
+            existing.setLocation(parsed.place());
+            repo.save(existing);
+            return "Записала: " + existing.getName() + " теперь в " + parsed.place() + ".";
+        }
+        repo.save(new Item(parsed.item(), parsed.place(), "", userId, storage));
+        return "Добавила: " + parsed.item() + " в " + parsed.place() + ".";
+    }
 
-        // справка
-        return "Я умею: «где шуруповёрт», «что в ящике 1», "
-                + "«положил шуруповёрт в ящик 3», «добавь молоток в ящик 2», "
-                + "«удали изоленту», «переключи на дачу», «выход».";
+    /** Добавь: всегда создаёт новую запись, даже если вещь уже записана */
+    private String add(ParsedCommand parsed, String userId, String storage)
+    {
+        if (parsed.place().isBlank())
+        {
+            return "Не поняла, куда добавить. Скажи: «добавь молоток в ящик 2».";
+        }
+        repo.save(new Item(parsed.item(), parsed.place(), "", userId, storage));
+        return "Добавила: " + parsed.item() + " в " + parsed.place() + ".";
+    }
+
+    /** Удали: винительный падеж уже сведён к именительному, ищем по основам */
+    private String delete(ParsedCommand parsed, String userId, String storage)
+    {
+        Item existing = findByName(parsed.item(), userId, storage);
+        if (existing != null)
+        {
+            repo.delete(existing);
+            return "Удалила " + existing.getName() + " из базы.";
+        }
+        return "Не нашла " + parsed.item() + ".";
+    }
+
+    /** Ищет вещь среди хранилища, сравнивая основы слов */
+    private Item findByName(String name, String userId, String storage)
+    {
+        for (Item item : repo.findByUserIdAndStorage(userId, storage))
+        {
+            if (parser.matchesByStem(name, item.getName()))
+            {
+                return item;
+            }
+        }
+        return null;
     }
 }
