@@ -85,40 +85,63 @@ post "8. Запиши, что дрель теперь в ящике 1" "Запи
   "state": {"session": {"storage": "гараж"}}
 }'
 
-# --- Шаг 9: поиск вещи после «запиши» ---
-post "9. Где дрель" "дрель — ящике 1" '{
+# --- Шаг 9: поиск вещи после «запиши» — в БД именительный падеж ---
+post "9. Где дрель" "дрель — ящик 1" '{
   "version": "1.0",
   "session": {"session_id": "t1", "message_id": 8, "skill_id": "", "user": {"user_id": "local-test"}, "new": false},
   "request": {"type": "SimpleUtterance", "command": "где дрель"},
   "state": {"session": {"storage": "гараж"}}
 }'
 
-post "10. Удалить шуруповёрт (чистит тестовые данные)" "Удалила шуруповёрт" '{
+# --- Шаг 10: винительный падеж вещи и места — в ответе как сказала ---
+post "10. Положила кружку в сумку" "Добавила: кружка в сумку" '{
   "version": "1.0",
   "session": {"session_id": "t1", "message_id": 9, "skill_id": "", "user": {"user_id": "local-test"}, "new": false},
+  "request": {"type": "SimpleUtterance", "command": "положила кружку в сумку"},
+  "state": {"session": {"storage": "гараж"}}
+}'
+
+# --- Шаг 11: в БД именительный падеж — «кружка — сумка», не «кружку в сумку» ---
+post "11. Где кружка" "кружка — сумка" '{
+  "version": "1.0",
+  "session": {"session_id": "t1", "message_id": 10, "skill_id": "", "user": {"user_id": "local-test"}, "new": false},
+  "request": {"type": "SimpleUtterance", "command": "где кружка"},
+  "state": {"session": {"storage": "гараж"}}
+}'
+
+post "12. Удалить шуруповёрт (чистит тестовые данные)" "Удалила шуруповёрт" '{
+  "version": "1.0",
+  "session": {"session_id": "t1", "message_id": 11, "skill_id": "", "user": {"user_id": "local-test"}, "new": false},
   "request": {"type": "SimpleUtterance", "command": "удали шуруповёрт"},
   "state": {"session": {"storage": "гараж"}}
 }'
 
-post "11. Удалить дрель (чистит тестовые данные)" "Удалила дрель" '{
+post "13. Удалить дрель (чистит тестовые данные)" "Удалила дрель" '{
   "version": "1.0",
-  "session": {"session_id": "t1", "message_id": 10, "skill_id": "", "user": {"user_id": "local-test"}, "new": false},
+  "session": {"session_id": "t1", "message_id": 12, "skill_id": "", "user": {"user_id": "local-test"}, "new": false},
   "request": {"type": "SimpleUtterance", "command": "удали дрель"},
   "state": {"session": {"storage": "гараж"}}
 }'
 
-# --- Шаг 12: чужой skill_id — пустой text и end_session: true ---
-post "12. Чужой skill_id" '"text":""' '{
+post "14. Удалить кружку (чистит тестовые данные)" "Удалила кружка" '{
+  "version": "1.0",
+  "session": {"session_id": "t1", "message_id": 13, "skill_id": "", "user": {"user_id": "local-test"}, "new": false},
+  "request": {"type": "SimpleUtterance", "command": "удали кружку"},
+  "state": {"session": {"storage": "гараж"}}
+}'
+
+# --- Шаг 15: чужой skill_id — пустой text и end_session: true ---
+post "15. Чужой skill_id" '"text":""' '{
   "version": "1.0",
   "session": {"session_id": "t2", "message_id": 0, "skill_id": "чужой-навык", "user": {"user_id": "local-test"}, "new": true},
   "request": {"type": "SimpleUtterance", "command": "где шуруповёрт"},
   "state": {"session": {"storage": "гараж"}}
 }'
 
-# --- Шаг 13: выход ---
-post "13. Выход" "Пока! Возвращайся" '{
+# --- Шаг 16: выход ---
+post "16. Выход" "Пока! Возвращайся" '{
   "version": "1.0",
-  "session": {"session_id": "t1", "message_id": 11, "skill_id": "", "user": {"user_id": "local-test"}, "new": false},
+  "session": {"session_id": "t1", "message_id": 14, "skill_id": "", "user": {"user_id": "local-test"}, "new": false},
   "request": {"type": "SimpleUtterance", "command": "выход"},
   "state": {"session": {"storage": "гараж"}}
 }'

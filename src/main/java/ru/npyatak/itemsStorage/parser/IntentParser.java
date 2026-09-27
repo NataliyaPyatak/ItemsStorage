@@ -57,22 +57,22 @@ public class IntentParser
         String text = command.trim();
         String normalized = normalize(text);
 
-        // «запиши, что дрель теперь в ящике 1» — синоним «положил»
+        // «запиши, что дрель теперь в ящике 1» — синоним «положил»; место в предложном падеже
         if (normalized.startsWith("запиши"))
         {
             String body = text.replaceFirst("(?i)^запиши\\s*,?\\s*(?:что\\s+)?", "");
-            return withEntities(Intent.PUT, removeTeper(body));
+            return withEntities(Intent.PUT, removeTeper(body), true);
         }
         for (String verb : PUT_VERBS)
         {
             if (normalized.startsWith(verb))
             {
-                return withEntities(Intent.PUT, stripFirstWord(text));
+                return withEntities(Intent.PUT, stripFirstWord(text), false);
             }
         }
         if (normalized.startsWith(ADD_VERB))
         {
-            return withEntities(Intent.ADD, stripFirstWord(text));
+            return withEntities(Intent.ADD, stripFirstWord(text), false);
         }
         if (normalized.startsWith(DELETE_VERB))
         {
@@ -136,15 +136,67 @@ public class IntentParser
         return true;
     }
 
-    /** Разделяет «вещь в место» по предлогу; без предлога место пустое */
-    private ParsedCommand withEntities(Intent intent, String body)
+    /**
+     * Разделяет «вещь в место» по предлогу; без предлога место пустое.
+     * Вещь приводится к именительному падежу, место сохраняется как сказано,
+     * а для хранения (placeNominative) переводится: из винительного
+     * («положила в сумку») или из предложного («запиши … в ящике»).
+     */
+    private ParsedCommand withEntities(Intent intent, String body, boolean prepositional)
     {
         Matcher m = PLACE_PATTERN.matcher(body.trim());
         if (m.matches())
         {
-            return new ParsedCommand(intent, clean(m.group(1)), clean(m.group(2)));
+            String place = clean(m.group(2));
+            String nominative = prepositional
+                    ? toNominativePrepositional(place)
+                    : toNominativeAccusative(place);
+            return new ParsedCommand(intent, stripAccusative(clean(m.group(1))), place, nominative);
         }
-        return new ParsedCommand(intent, clean(body), "");
+        return new ParsedCommand(intent, stripAccusative(clean(body)), "");
+    }
+
+    /** Предложный → именительный: «ящике» → «ящик», «шкафу» → «шкаф» (последнее нецифровое слово) */
+    private String toNominativePrepositional(String place)
+    {
+        String[] words = place.split(" ");
+        for (int i = words.length - 1; i >= 0; i--)
+        {
+            if (words[i].matches("\\d+"))
+            {
+                continue;
+            }
+            if (words[i].length() > 3 && (words[i].endsWith("е") || words[i].endsWith("у")))
+            {
+                words[i] = words[i].substring(0, words[i].length() - 1);
+            }
+            break;
+        }
+        return String.join(" ", words).trim();
+    }
+
+    /** Винительный → именительный: «сумку» → «сумка», «полку» → «полка» (последнее нецифровое слово) */
+    private String toNominativeAccusative(String place)
+    {
+        String[] words = place.split(" ");
+        for (int i = words.length - 1; i >= 0; i--)
+        {
+            if (words[i].matches("\\d+"))
+            {
+                continue;
+            }
+            String w = words[i];
+            if (w.length() > 3 && w.endsWith("у"))
+            {
+                words[i] = w.substring(0, w.length() - 1) + "а";
+            }
+            else if (w.length() > 3 && w.endsWith("ю"))
+            {
+                words[i] = w.substring(0, w.length() - 1) + "я";
+            }
+            break;
+        }
+        return String.join(" ", words).trim();
     }
 
     /** Нижний регистр + ё→е: единая форма для сравнения */

@@ -217,21 +217,23 @@ public class WebhookController
         return "В " + place + ": " + names + ".";
     }
 
-    /** Положил/переложил/запиши: обновляем место существующей вещи, иначе создаём */
+    /** Положил/переложил/запиши: обновляем место существующей вещи, иначе создаём.
+     *  В БД пишем именительный падеж, в ответе повторяем сказанное. */
     private String put(ParsedCommand parsed, String userId, String storage)
     {
         if (parsed.place().isBlank())
         {
             return "Не поняла, куда положить. Скажи: «положила дрель в ящик 1».";
         }
+        String placeToStore = placeToStore(parsed);
         Item existing = findByName(parsed.item(), userId, storage);
         if (existing != null)
         {
-            existing.setLocation(parsed.place());
+            existing.setLocation(placeToStore);
             repo.save(existing);
             return "Записала: " + existing.getName() + " теперь в " + parsed.place() + ".";
         }
-        repo.save(new Item(parsed.item(), parsed.place(), "", userId, storage));
+        repo.save(new Item(parsed.item(), placeToStore, "", userId, storage));
         return "Добавила: " + parsed.item() + " в " + parsed.place() + ".";
     }
 
@@ -242,8 +244,14 @@ public class WebhookController
         {
             return "Не поняла, куда добавить. Скажи: «добавь молоток в ящик 2».";
         }
-        repo.save(new Item(parsed.item(), parsed.place(), "", userId, storage));
+        repo.save(new Item(parsed.item(), placeToStore(parsed), "", userId, storage));
         return "Добавила: " + parsed.item() + " в " + parsed.place() + ".";
+    }
+
+    /** Место для хранения: именительный падеж, если парсер его вычислил */
+    private String placeToStore(ParsedCommand parsed)
+    {
+        return parsed.placeNominative().isBlank() ? parsed.place() : parsed.placeNominative();
     }
 
     /** Удали: винительный падеж уже сведён к именительному, ищем по основам */

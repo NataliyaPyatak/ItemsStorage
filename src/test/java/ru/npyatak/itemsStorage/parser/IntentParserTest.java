@@ -71,6 +71,50 @@ class IntentParserTest
         assertThat(c.place()).isEqualTo("шкафу");
     }
 
+    // --- PUT/ADD: вещь и место приводятся к именительному падежу для хранения ---
+
+    @Test
+    void parsePutItemAccusativeToNominative()
+    {
+        ParsedCommand c = parser.parse("положила кружку в ящик 2");
+        assertThat(c.item()).isEqualTo("кружка");
+        assertThat(c.place()).isEqualTo("ящик 2");
+        assertThat(c.placeNominative()).isEqualTo("ящик 2");
+    }
+
+    @Test
+    void parsePutPlaceAccusativeToNominative()
+    {
+        ParsedCommand c = parser.parse("положила кружку в сумку");
+        assertThat(c.item()).isEqualTo("кружка");
+        assertThat(c.place()).isEqualTo("сумку");
+        assertThat(c.placeNominative()).isEqualTo("сумка");
+    }
+
+    @Test
+    void parsePutPerekladilaPlaceToNominative()
+    {
+        ParsedCommand c = parser.parse("переложила отвёртку на полку");
+        assertThat(c.item()).isEqualTo("отвёртка");
+        assertThat(c.place()).isEqualTo("полку");
+        assertThat(c.placeNominative()).isEqualTo("полка");
+    }
+
+    @Test
+    void parseZapishiPlacePrepositionalToNominative()
+    {
+        ParsedCommand c = parser.parse("запиши, что дрель теперь в ящике 1");
+        assertThat(c.place()).isEqualTo("ящике 1");
+        assertThat(c.placeNominative()).isEqualTo("ящик 1");
+    }
+
+    @Test
+    void parseZapishiShkafuToNominative()
+    {
+        ParsedCommand c = parser.parse("запиши, что теперь молоток в шкафу");
+        assertThat(c.placeNominative()).isEqualTo("шкаф");
+    }
+
     // --- WHAT_IN: предложный и именительный падежи ---
 
     @Test
@@ -124,6 +168,24 @@ class IntentParserTest
         assertThat(c.intent()).isEqualTo(Intent.ADD);
         assertThat(c.item()).isEqualTo("молоток");
         assertThat(c.place()).isEqualTo("ящик 2");
+    }
+
+    @Test
+    void parseDobavPlaceAccusativeToNominative()
+    {
+        ParsedCommand c = parser.parse("добавь тарелку в коробку");
+        assertThat(c.item()).isEqualTo("тарелка");
+        assertThat(c.place()).isEqualTo("коробку");
+        assertThat(c.placeNominative()).isEqualTo("коробка");
+    }
+
+    // --- placeNominative не нужен: поиск ничего не сохраняет ---
+
+    @Test
+    void parseWhatInHasBlankNominative()
+    {
+        assertThat(parser.parse("что в ящике 3").placeNominative()).isEmpty();
+        assertThat(parser.parse("где кружка").placeNominative()).isEmpty();
     }
 
     @Test

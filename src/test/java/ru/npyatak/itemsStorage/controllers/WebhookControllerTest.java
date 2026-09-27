@@ -100,7 +100,48 @@ class WebhookControllerTest
         assertThat(text).contains("Записала");
         ArgumentCaptor<Item> captor = ArgumentCaptor.forClass(Item.class);
         verify(repo).save(captor.capture());
-        assertThat(captor.getValue().getLocation()).isEqualTo("ящике 1");
+        assertThat(captor.getValue().getLocation()).isEqualTo("ящик 1");
+    }
+
+    // --- PUT/ADD: в БД пишется именительный падеж, ответ повторяет сказанное ---
+
+    @Test
+    void putStoresNominativeItemAndPlace()
+    {
+        when(repo.findByUserIdAndStorage(USER_ID, STORAGE)).thenReturn(List.of());
+
+        String text = responseText(controller.webhook(request("положила кружку в сумку")));
+
+        assertThat(text).isEqualTo("Добавила: кружка в сумку.");
+        ArgumentCaptor<Item> captor = ArgumentCaptor.forClass(Item.class);
+        verify(repo).save(captor.capture());
+        assertThat(captor.getValue().getName()).isEqualTo("кружка");
+        assertThat(captor.getValue().getLocation()).isEqualTo("сумка");
+    }
+
+    @Test
+    void findAnswersWithStoredNominativeForms()
+    {
+        when(repo.findByUserIdAndStorage(USER_ID, STORAGE))
+                .thenReturn(List.of(new Item("кружка", "сумка", "", USER_ID, STORAGE)));
+
+        String text = responseText(controller.webhook(request("где кружка")));
+
+        assertThat(text).isEqualTo("кружка — сумка.");
+    }
+
+    @Test
+    void addStoresNominativePlace()
+    {
+        when(repo.findByUserIdAndStorage(USER_ID, STORAGE)).thenReturn(List.of());
+
+        String text = responseText(controller.webhook(request("добавь тарелку в коробку")));
+
+        assertThat(text).isEqualTo("Добавила: тарелка в коробку.");
+        ArgumentCaptor<Item> captor = ArgumentCaptor.forClass(Item.class);
+        verify(repo).save(captor.capture());
+        assertThat(captor.getValue().getName()).isEqualTo("тарелка");
+        assertThat(captor.getValue().getLocation()).isEqualTo("коробка");
     }
 
     // --- DELETE: «удали изоленту» находит сохранённую «изолента» ---
