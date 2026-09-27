@@ -20,13 +20,8 @@ public class DataSourceConfig {
         String databaseUrl = System.getenv("DATABASE_URL");
 
         if (databaseUrl == null || databaseUrl.isBlank()) {
-            // Локальная разработка
-            return DataSourceBuilder.create()
-                    .url("jdbc:postgresql://localhost:5432/dbname")
-                    .username("username")
-                    .password("password")
-                    .driverClassName("org.postgresql.Driver")
-                    .build();
+            throw new IllegalStateException(
+                    "Переменная окружения DATABASE_URL не задана — подключение к БД невозможно");
         }
 
         // Формат: postgresql://user:password@host:port/database?params
@@ -37,12 +32,20 @@ public class DataSourceConfig {
         String credentials = withoutScheme.substring(0, atIndex);
         String hostAndRest = withoutScheme.substring(atIndex + 1);
 
+        // Пароль может отсутствовать (локальная БД без пароля)
         int colonIndex = credentials.indexOf(':');
-        String username = credentials.substring(0, colonIndex);
-        String password = credentials.substring(colonIndex + 1);
+        String username = colonIndex >= 0
+                ? credentials.substring(0, colonIndex)
+                : credentials;
+        String password = colonIndex >= 0
+                ? credentials.substring(colonIndex + 1)
+                : "";
 
-        // Отрезаем query-параметры
+        // Query-параметры сохраняем (в них может быть задан sslmode и другие настройки)
         int queryIndex = hostAndRest.indexOf('?');
+        String query = queryIndex >= 0
+                ? hostAndRest.substring(queryIndex + 1)
+                : "";
         String hostDb = queryIndex >= 0
                 ? hostAndRest.substring(0, queryIndex)
                 : hostAndRest;
@@ -64,7 +67,12 @@ public class DataSourceConfig {
                 ? hostPort.substring(portColon + 1)
                 : "5432";
 
-        String jdbcUrl = "jdbc:postgresql://" + host + ":" + port + "/" + database;
+        // Включаем TLS, если sslmode не задан в DATABASE_URL явно
+        if (!query.contains("sslmode")) {
+            query = query.isEmpty() ? "sslmode=require" : query + "&sslmode=require";
+        }
+
+        String jdbcUrl = "jdbc:postgresql://" + host + ":" + port + "/" + database + "?" + query;
 
         return DataSourceBuilder.create()
                 .url(jdbcUrl)

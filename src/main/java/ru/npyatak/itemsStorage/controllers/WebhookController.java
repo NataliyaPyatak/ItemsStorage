@@ -6,7 +6,6 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
@@ -15,6 +14,7 @@ import ru.npyatak.itemsStorage.entities.Item;
 import ru.npyatak.itemsStorage.repositories.ItemRepository;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ObjectNode;
 
 /**
  *
@@ -38,18 +38,31 @@ public class WebhookController
     }
 
     @PostMapping("/")
-    public JsonNode webhook(@RequestBody JsonNode request) throws Exception
+    public JsonNode webhook(@RequestBody JsonNode request)
+    {
+        try
+        {
+            return processRequest(request);
+        }
+        catch (Exception e)
+        {
+            // Алиса всегда ждёт корректный ответ — вместо 500 отдаём сообщение об ошибке
+            return buildResponse(request, "Извините, произошла ошибка. Попробуйте ещё раз.", false, "");
+        }
+    }
+
+    private JsonNode processRequest(JsonNode request)
     {
         String skillId = request.path("session").path("skill_id").asText();
         if(!skillId.equals(expectedSkillId))
         {
             // Чужой запрос — молча игнорируем
-            return mapper.readTree("""
-            {
-              "response": { "text": "", "end_session": true },
-              "version": "1.0"
-            }
-        """);
+            ObjectNode ignored = mapper.createObjectNode();
+            ObjectNode resp = ignored.putObject("response");
+            resp.put("text", "");
+            resp.put("end_session", true);
+            ignored.put("version", "1.0");
+            return ignored;
         }
         String command = request.path("request").path("command").asText().toLowerCase().trim();
         String userId = request.path("session").path("user").path("user_id").asText();
@@ -62,19 +75,9 @@ public class WebhookController
 
         String responseText;
         String newStorage = currentStorage;  // сохраняем текущее, если не меняем
-        if (userId == null || userId.isBlank())
+        if (userId.isBlank())
         {
-            String json = """
-            {
-              "response": {
-                "text": "Чтобы пользоваться навыком, войдите в аккаунт Яндекса.",
-                "end_session": true
-              },
-              "version": "1.0",
-              "session": %s
-            }
-            """.formatted(request.path("session").toString());
-            return mapper.readTree(json);
+            return buildResponse(request, "Чтобы пользоваться навыком, войдите в аккаунт Яндекса.", true, "");
         }
 
         if (endSession)
@@ -120,26 +123,31 @@ public class WebhookController
             responseText = processCommand(command, userId, newStorage);
         }
 
-        String responseJson = """
-        {
-          "response": {
-            "text": "%s",
-            "end_session": %s
-          },
-          "version": "1.0",
-          "session": %s,
-          "session_state": {
-            "storage": "%s"
-          }
-        }
-        """.formatted(
-                responseText.replace("\"", "\\\""),
-                endSession,
-                request.path("session").toString(),
-                newStorage.replace("\"", "\\\"")
-        );
+        return buildResponse(request, responseText, endSession, newStorage);
+    }
 
-        return mapper.readTree(responseJson);
+    /**
+     * Собирает ответ для Алисы через Jackson — экранирование выполняется автоматически.
+     */
+    private JsonNode buildResponse(JsonNode request, String text, boolean endSession, String storage)
+    {
+        ObjectNode root = mapper.createObjectNode();
+        ObjectNode response = root.putObject("response");
+        response.put("text", text);
+        response.put("end_session", endSession);
+        root.put("version", "1.0");
+        JsonNode session = request.path("session");
+        if (session.isObject())
+        {
+            root.set("session", session.deepCopy());
+        }
+        else
+        {
+            root.putObject("session");
+        }
+        ObjectNode sessionState = root.putObject("session_state");
+        sessionState.put("storage", storage);
+        return root;
     }
 
     private String processCommand(String command, String userId, String storage)
@@ -242,27 +250,5 @@ public class WebhookController
         return "Я умею: «где шуруповёрт», «что в ящике 1», "
                 + "«положил шуруповёрт в ящик 3», «добавь молоток в ящик 2», "
                 + "«удали изоленту», «переключи на дачу», «выход».";
-    }
-
-    @GetMapping("/debug")
-    public String debug()
-    {
-        var all = repo.findAll();
-        if (all.isEmpty())
-        {
-            return "Таблица items пуста";
-        }
-        StringBuilder sb = new StringBuilder("Все вещи:\n");
-        for (Item i : all)
-        {
-            sb.append("ID=").append(i.getId())
-                    .append(", name='").append(i.getName())
-                    .append("', location='").append(i.getLocation())
-                    .append("', note='").append(i.getNote())
-                    .append("', userId='").append(i.getUserId())
-                    .append("', storage='").append(i.getStorage())
-                    .append("'\n");
-        }
-        return sb.toString();
     }
 }
